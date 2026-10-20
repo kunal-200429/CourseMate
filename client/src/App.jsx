@@ -1,6 +1,6 @@
-
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import './App.css';
+import './CrazyUI.css';
 
 const API = 'http://localhost:5000/api/assignments';
 
@@ -12,250 +12,160 @@ const emptyForm = {
   priority: 'Medium',
 };
 
-function toLocalDateTime(value) {
-  if (!value) return '';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
-
-async function readResponse(response) {
-  const text = await response.text();
-
-  if (!text) return {};
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { message: text };
-  }
-}
-
-function getErrorMessage(error, fallback) {
-  if (error instanceof TypeError) {
-    return 'Cannot connect to the backend. Make sure the server is running on port 5000.';
-  }
-
-  return error?.message || fallback;
-}
-
 function App() {
+  console.log("NEW COURSEMATE APP LOADED");
+  
   const [assignments, setAssignments] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [priorityFilter, setPriorityFilter] = useState('All');
-  const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [form, setForm] = useState({ ...emptyForm });
-
-  const loadAssignments = useCallback(async (showLoading = false) => {
-    if (showLoading) setLoading(true);
-
-    try {
-      const response = await fetch(API);
-      const data = await readResponse(response);
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Could not load assignments.');
-      }
-
-      if (!Array.isArray(data)) {
-        throw new Error('Unexpected response from the server.');
-      }
-
-      setAssignments(data);
-      setError('');
-      return true;
-    } catch (err) {
-      setError(getErrorMessage(err, 'Could not load assignments.'));
-      return false;
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
-    loadAssignments(true);
-  }, [loadAssignments]);
+    loadAssignments();
+  }, []);
 
-  function updateField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
-    setError('');
-    setSuccess('');
+  async function loadAssignments() {
+    try {
+      setLoading(true);
+      const response = await fetch(API);
+
+      if (!response.ok) {
+        throw new Error('Could not load assignments');
+      }
+
+      const data = await response.json();
+      setAssignments(data);
+      setError('');
+    } catch (err) {
+      setError(
+        err.message || 'Cannot connect to backend. Check server.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleChange(e) {
+    const { name, value } = e.target;
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
   }
 
   function resetForm() {
-    setForm({ ...emptyForm });
+    setForm(emptyForm);
     setEditingId(null);
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
     setError('');
     setSuccess('');
-  }
 
-  function validateForm() {
-    if (!form.title.trim()) return 'Please enter an assignment title.';
-    if (!form.subject.trim()) return 'Please enter the subject.';
-    if (!form.dueDate) return 'Please select a due date and time.';
-
-    const dueDate = new Date(form.dueDate);
-
-    if (Number.isNaN(dueDate.getTime())) {
-      return 'Please select a valid due date.';
-    }
-
-    if (!['Low', 'Medium', 'High'].includes(form.priority)) {
-      return 'Please select a valid priority.';
-    }
-
-    if (form.title.trim().length > 100) {
-      return 'Title cannot exceed 100 characters.';
-    }
-
-    if (form.subject.trim().length > 100) {
-      return 'Subject cannot exceed 100 characters.';
-    }
-
-    if (form.description.length > 1000) {
-      return 'Description cannot exceed 1000 characters.';
-    }
-
-    return '';
-  }
-
-  async function submitAssignment(event) {
-    event.preventDefault();
-
-    if (saving) return;
-
-    const validationError = validateForm();
-
-    if (validationError) {
-      setError(validationError);
-      setSuccess('');
+    if (!form.title.trim() || !form.subject.trim() || !form.dueDate) {
+      setError('Please fill in title, subject and due date.');
       return;
     }
 
-    setSaving(true);
-    setError('');
-    setSuccess('');
-
-    const isEditing = Boolean(editingId);
-    const url = isEditing ? `${API}/${editingId}` : API;
-
-    const payload = {
-      title: form.title.trim(),
-      subject: form.subject.trim(),
-      description: form.description.trim(),
-      dueDate: new Date(form.dueDate).toISOString(),
-      priority: form.priority,
-    };
-
     try {
+      setSaving(true);
+
+      const isEditing = editingId !== null;
+      const url = isEditing
+        ? `${API}/${editingId}`
+        : API;
+
+      const payload = {
+        ...form,
+        dueDate: new Date(form.dueDate).toISOString(),
+      };
+
       const response = await fetch(url, {
         method: isEditing ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(payload),
       });
 
-      const data = await readResponse(response);
-
       if (!response.ok) {
-        throw new Error(data.message || 'Could not save the assignment.');
+        const message = await response.text();
+        throw new Error(message || 'Could not save assignment');
       }
 
-      setForm({ ...emptyForm });
-      setEditingId(null);
+      resetForm();
       setSuccess(
         isEditing
-          ? 'Assignment updated successfully.'
-          : 'Assignment added successfully.'
+          ? 'Assignment updated successfully!'
+          : 'Assignment added successfully!'
       );
 
       await loadAssignments();
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to save the assignment.'));
+      setError(err.message || 'Something went wrong');
     } finally {
       setSaving(false);
     }
   }
 
   function startEditing(item) {
-    if (!item?._id) {
-      setError('Could not identify this assignment.');
-      return;
-    }
+    setEditingId(item._id);
 
     setForm({
       title: item.title || '',
       subject: item.subject || '',
       description: item.description || '',
-      dueDate: toLocalDateTime(item.dueDate),
+      dueDate: item.dueDate
+        ? new Date(item.dueDate).toISOString().slice(0, 16)
+        : '',
       priority: item.priority || 'Medium',
     });
 
-    setEditingId(item._id);
     setError('');
     setSuccess('');
-
-    document.querySelector('.form-panel')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function updateStatus(item) {
-    if (!item?._id || busyId) return;
+    setError('');
+    setSuccess('');
 
     const nextStatus =
       item.status === 'Completed' ? 'Pending' : 'Completed';
 
-    setBusyId(item._id);
-    setError('');
-    setSuccess('');
-
     try {
       const response = await fetch(`${API}/${item._id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ status: nextStatus }),
       });
 
-      const data = await readResponse(response);
-
       if (!response.ok) {
-        throw new Error(data.message || 'Could not update assignment status.');
+        throw new Error('Could not update assignment status');
       }
 
-      setSuccess(
-        nextStatus === 'Completed'
-          ? 'Assignment marked as completed.'
-          : 'Assignment moved back to pending.'
-      );
-
+      setSuccess('Assignment status updated!');
       await loadAssignments();
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to update assignment status.'));
-    } finally {
-      setBusyId(null);
+      setError(err.message);
     }
   }
 
   async function deleteAssignment(id) {
-    if (!id || busyId) return;
+    if (!window.confirm('Are you sure you want to delete this assignment?')) {
+      return;
+    }
 
-    const confirmed = window.confirm(
-      'Are you sure you want to delete this assignment? This action cannot be undone.'
-    );
-
-    if (!confirmed) return;
-
-    setBusyId(id);
     setError('');
     setSuccess('');
 
@@ -264,23 +174,18 @@ function App() {
         method: 'DELETE',
       });
 
-      const data = await readResponse(response);
-
       if (!response.ok) {
-        throw new Error(data.message || 'Could not delete the assignment.');
+        throw new Error('Could not delete assignment');
       }
 
       if (editingId === id) {
-        setForm({ ...emptyForm });
-        setEditingId(null);
+        resetForm();
       }
 
-      setSuccess('Assignment deleted successfully.');
+      setSuccess('Assignment deleted successfully!');
       await loadAssignments();
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to delete the assignment.'));
-    } finally {
-      setBusyId(null);
+      setError(err.message);
     }
   }
 
@@ -290,23 +195,24 @@ function App() {
 
   const pending = assignments.length - completed;
 
-  const overdue = assignments.filter((item) => {
-    const due = new Date(item.dueDate);
-
-    return (
+  const overdue = assignments.filter(
+    (item) =>
       item.status !== 'Completed' &&
-      !Number.isNaN(due.getTime()) &&
-      due < new Date()
-    );
-  }).length;
+      item.dueDate &&
+      new Date(item.dueDate) < new Date()
+  ).length;
+
+  const completionRate = assignments.length
+    ? Math.round((completed / assignments.length) * 100)
+    : 0;
 
   const filteredAssignments = assignments.filter((item) => {
-    const search = searchTerm.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
 
     const matchesSearch =
-      (item.title || '').toLowerCase().includes(search) ||
-      (item.subject || '').toLowerCase().includes(search) ||
-      (item.description || '').toLowerCase().includes(search);
+      (item.title || '').toLowerCase().includes(query) ||
+      (item.subject || '').toLowerCase().includes(query) ||
+      (item.description || '').toLowerCase().includes(query);
 
     const matchesStatus =
       statusFilter === 'All' ||
@@ -319,187 +225,266 @@ function App() {
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
-  function resetFilters() {
-    setSearchTerm('');
+  function clearFilters() {
+    setSearch('');
     setStatusFilter('All');
     setPriorityFilter('All');
   }
 
-  return (
+    return (
     <div className="app">
       <header className="topbar">
         <a className="brand" href="/">
           Course<span>Mate</span>
         </a>
-        <span className="tagline">Your coursework, under control.</span>
+
+        <p className="tagline">
+          Your coursework, under control.
+        </p>
+
+        <div className="sidebar-section-label">WORKSPACE</div>
+
+        
+<nav className="nav-links">
+  <a href="#dashboard">📊 Dashboard</a>
+  <a href="#assignment-form">➕ Assignments</a>
+  <a href="#assignment-list">📚 My Work</a>
+  <a href="#about">ℹ️ About</a>
+</nav>
+
+
+        <div className="sidebar-bottom">
+          <span className="sidebar-section-label">YOUR PROGRESS</span>
+          <p>Keep going. Every task counts! 🚀</p>
+        </div>
       </header>
 
-      <main className="container">
+      <main className="container" id="dashboard">
         <section className="hero">
           <div>
             <p className="eyebrow">YOUR STUDENT WORKSPACE</p>
+
             <h1>
               Stay ahead of
               <br />
               every deadline.
             </h1>
+
             <p className="subtitle">
               Organise assignments, track due dates and make every
               submission count.
             </p>
           </div>
-          <div className="hero-icon" aria-hidden="true">
-            🎓
-          </div>
+
+          <div className="hero-icon">🎓</div>
         </section>
 
-        <section className="stats" aria-label="Assignment statistics">
+        {error && (
+          <div className="message error-message" role="alert">
+            ⚠️ {error}
+            <button
+              type="button"
+              onClick={() => setError('')}
+              aria-label="Dismiss error"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {success && (
+          <div className="message success-message" role="status">
+            ✅ {success}
+            <button
+              type="button"
+              onClick={() => setSuccess('')}
+              aria-label="Dismiss message"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        <section className="stats">
           <div className="stat-card">
             <span>Total assignments</span>
             <strong>{assignments.length}</strong>
+            <small>📝 All your coursework</small>
           </div>
+
           <div className="stat-card">
             <span>Pending</span>
             <strong>{pending}</strong>
+            <small>⏳ Still to complete</small>
           </div>
+
           <div className="stat-card">
             <span>Completed</span>
             <strong>{completed}</strong>
+            <small>✅ Tasks finished</small>
           </div>
+
           <div className="stat-card overdue-card">
             <span>Overdue</span>
             <strong>{overdue}</strong>
+            <small>⚠️ Past the deadline</small>
           </div>
         </section>
 
+        <section className="progress-panel">
+          <div className="progress-copy">
+            <div>
+              <p className="eyebrow">YOUR ACHIEVEMENTS</p>
+              <h2>Completion progress</h2>
+            </div>
+
+            <strong>{completionRate}%</strong>
+          </div>
+
+          <div
+            className="progress-track"
+            role="progressbar"
+            aria-valuenow={completionRate}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-label="Assignment completion progress"
+          >
+            <div
+              className="progress-fill"
+              style={{ width: `${completionRate}%` }}
+            />
+          </div>
+
+          <p className="progress-note">
+            {assignments.length === 0
+              ? 'Add your first assignment to start tracking your progress.'
+              : `${completed} of ${assignments.length} assignments completed. Keep it up!`}
+          </p>
+        </section>
+
         <div className="workspace">
-          <section className="panel form-panel">
-            <p className="eyebrow">PLAN YOUR WORK</p>
-            <h2>{editingId ? 'Edit assignment' : 'Add assignment'}</h2>
+          <section
+            className="panel form-panel"
+            id="assignment-form"
+          >
+            <p className="eyebrow">
+              {editingId ? 'UPDATE YOUR WORK' : 'PLAN YOUR WORK'}
+            </p>
 
-            <form onSubmit={submitAssignment}>
-              <label>
-                Assignment title
-                <input
-                  required
-                  maxLength={100}
-                  placeholder="e.g. MERN Stack PoC"
-                  value={form.title}
-                  onChange={(e) => updateField('title', e.target.value)}
-                />
-              </label>
+            <h2>
+              {editingId ? 'Edit assignment' : 'Add assignment'}
+            </h2>
 
-              <label>
-                Subject
-                <input
-                  required
-                  maxLength={100}
-                  placeholder="e.g. Full Stack Development"
-                  value={form.subject}
-                  onChange={(e) => updateField('subject', e.target.value)}
-                />
-              </label>
+            <form onSubmit={handleSubmit}>
+              <label htmlFor="title">Assignment title *</label>
+              <input
+                id="title"
+                name="title"
+                type="text"
+                placeholder="e.g. Machine Learning Report"
+                value={form.title}
+                onChange={handleChange}
+                required
+              />
 
-              <label>
-                Description
-                <textarea
-                  maxLength={1000}
-                  placeholder="What do you need to complete?"
-                  value={form.description}
-                  onChange={(e) =>
-                    updateField('description', e.target.value)
-                  }
-                />
-                <span className="field-hint">
-                  {form.description.length}/1000 characters
-                </span>
-              </label>
+              <label htmlFor="subject">Subject *</label>
+              <input
+                id="subject"
+                name="subject"
+                type="text"
+                placeholder="e.g. Data Science"
+                value={form.subject}
+                onChange={handleChange}
+                required
+              />
 
-              <label>
-                Due date and time
-                <input
-                  required
-                  type="datetime-local"
-                  value={form.dueDate}
-                  onChange={(e) => updateField('dueDate', e.target.value)}
-                />
-              </label>
+              <label htmlFor="description">Description</label>
+              <textarea
+                id="description"
+                name="description"
+                placeholder="Add some details..."
+                value={form.description}
+                onChange={handleChange}
+                rows="3"
+              />
 
-              <label>
-                Priority
-                <select
-                  value={form.priority}
-                  onChange={(e) => updateField('priority', e.target.value)}
-                >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                </select>
-              </label>
+              <label htmlFor="dueDate">Due date and time *</label>
+              <input
+                id="dueDate"
+                name="dueDate"
+                type="datetime-local"
+                value={form.dueDate}
+                onChange={handleChange}
+                required
+              />
+
+              <label htmlFor="priority">Priority</label>
+              <select
+                id="priority"
+                name="priority"
+                value={form.priority}
+                onChange={handleChange}
+              >
+                <option value="High">High priority</option>
+                <option value="Medium">Medium priority</option>
+                <option value="Low">Low priority</option>
+              </select>
 
               <div className="form-actions">
                 <button
-                  className="primary-btn"
                   type="submit"
+                  className="primary-btn"
                   disabled={saving}
                 >
                   {saving
                     ? 'Saving...'
                     : editingId
-                      ? 'Save changes'
-                      : '+ Add assignment'}
+                      ? '💾 Update assignment'
+                      : '＋ Add assignment'}
                 </button>
 
                 {editingId && (
                   <button
-                    className="small-btn"
                     type="button"
-                    disabled={saving}
+                    className="secondary-btn"
                     onClick={resetForm}
                   >
-                    Cancel
+                    Cancel edit
                   </button>
                 )}
               </div>
             </form>
           </section>
 
-          <section className="panel list-panel">
+          <section
+            className="panel list-panel"
+            id="assignment-list"
+          >
             <div className="list-heading">
               <div>
-                <p className="eyebrow">YOUR COURSEWORK</p>
-                <h2>My assignments</h2>
+                <p className="eyebrow">STAY ORGANISED</p>
+                <h2>Your assignments</h2>
               </div>
-              <span className="count">
-                {filteredAssignments.length} of {assignments.length}
+
+              <span className="count-badge">
+                {filteredAssignments.length}
               </span>
             </div>
 
-            {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
-            )}
+            <input
+              type="search"
+              className="search-input"
+              placeholder="🔎 Search assignments..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search assignments"
+            />
 
-            {success && (
-              <p className="success-message" role="status">
-                {success}
-              </p>
-            )}
-
-            <div className="assignment-filters">
-              <input
-                type="search"
-                aria-label="Search assignments"
-                placeholder="Search title, subject or description..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-
+            <div className="filter-row">
               <select
-                aria-label="Filter assignments by status"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
+                aria-label="Filter by status"
               >
                 <option value="All">All statuses</option>
                 <option value="Pending">Pending</option>
@@ -507,9 +492,9 @@ function App() {
               </select>
 
               <select
-                aria-label="Filter assignments by priority"
                 value={priorityFilter}
                 onChange={(e) => setPriorityFilter(e.target.value)}
+                aria-label="Filter by priority"
               >
                 <option value="All">All priorities</option>
                 <option value="High">High priority</option>
@@ -518,44 +503,39 @@ function App() {
               </select>
             </div>
 
-            {(searchTerm ||
+            {(search ||
               statusFilter !== 'All' ||
               priorityFilter !== 'All') && (
               <button
                 type="button"
                 className="small-btn reset-filters"
-                onClick={resetFilters}
+                onClick={clearFilters}
               >
                 Clear search and filters
               </button>
             )}
 
             {loading ? (
-              <p className="empty">Loading assignments...</p>
+              <div className="empty">
+                <span>⏳</span>
+                <p>Loading assignments...</p>
+              </div>
             ) : assignments.length === 0 ? (
               <div className="empty">
                 <span>📚</span>
                 <h3>Nothing on your list yet</h3>
                 <p>Add your first assignment using the form.</p>
-                {!error && (
-                  <button
-                    type="button"
-                    className="small-btn"
-                    onClick={() => loadAssignments(true)}
-                  >
-                    Refresh assignments
-                  </button>
-                )}
               </div>
             ) : filteredAssignments.length === 0 ? (
               <div className="empty">
                 <span>🔎</span>
                 <h3>No matching assignments</h3>
-                <p>Try a different search or change your filters.</p>
+                <p>Try another search or change your filters.</p>
+
                 <button
                   type="button"
                   className="small-btn"
-                  onClick={resetFilters}
+                  onClick={clearFilters}
                 >
                   Show all assignments
                 </button>
@@ -563,17 +543,16 @@ function App() {
             ) : (
               <div className="assignment-list">
                 {filteredAssignments.map((item) => {
-                  const dueDate = new Date(item.dueDate);
-                  const validDueDate = !Number.isNaN(dueDate.getTime());
                   const isOverdue =
                     item.status !== 'Completed' &&
-                    validDueDate &&
-                    dueDate < new Date();
-
-                  const itemBusy = busyId === item._id;
+                    item.dueDate &&
+                    new Date(item.dueDate) < new Date();
 
                   return (
-                    <article className="assignment" key={item._id}>
+                    <article
+                      className="assignment"
+                      key={item._id}
+                    >
                       <div className="assignment-top">
                         <div>
                           <h3
@@ -583,6 +562,7 @@ function App() {
                           >
                             {item.title}
                           </h3>
+
                           <p className="subject">{item.subject}</p>
                         </div>
 
@@ -594,14 +574,16 @@ function App() {
                       </div>
 
                       {item.description && (
-                        <p className="description">{item.description}</p>
+                        <p className="description">
+                          {item.description}
+                        </p>
                       )}
 
                       <p className={isOverdue ? 'due overdue-text' : 'due'}>
-                        {isOverdue ? '⚠ Overdue · ' : '📅 Due · '}
-                        {validDueDate
-                          ? dueDate.toLocaleString()
-                          : 'Date unavailable'}
+                        {isOverdue ? '⚠️ Overdue · ' : '📅 Due · '}
+                        {item.dueDate
+                          ? new Date(item.dueDate).toLocaleString()
+                          : 'No due date'}
                       </p>
 
                       <div className="assignment-actions">
@@ -614,32 +596,27 @@ function App() {
                         <button
                           type="button"
                           className="small-btn"
-                          disabled={Boolean(busyId)}
                           onClick={() => updateStatus(item)}
                         >
-                          {itemBusy
-                            ? 'Updating...'
-                            : item.status === 'Completed'
-                              ? 'Undo'
-                              : 'Mark done'}
+                          {item.status === 'Completed'
+                            ? '↩ Undo'
+                            : '✓ Mark done'}
                         </button>
 
                         <button
                           type="button"
                           className="small-btn"
-                          disabled={Boolean(busyId) || saving}
                           onClick={() => startEditing(item)}
                         >
-                          Edit
+                          ✏️ Edit
                         </button>
 
                         <button
                           type="button"
                           className="delete-btn"
-                          disabled={Boolean(busyId) || saving}
                           onClick={() => deleteAssignment(item._id)}
                         >
-                          {itemBusy ? 'Please wait...' : 'Delete'}
+                          🗑 Delete
                         </button>
                       </div>
                     </article>
@@ -650,7 +627,41 @@ function App() {
           </section>
         </div>
 
-        <footer>CourseMate · Plan better. Submit on time.</footer>
+        <footer>
+          CourseMate · Plan better. Submit on time. ✨
+        </footer>
+        
+<section className="panel" id="about">
+  <p className="eyebrow">ABOUT COURSEMATE</p>
+  <h2>Your student workspace</h2>
+
+  <p>
+    CourseMate is an assignment management application
+    designed to help students organise their coursework,
+    track deadlines and monitor their progress.
+  </p>
+
+  <h3>Features</h3>
+  <ul>
+    <li>Add and manage assignments</li>
+    <li>Edit and delete assignments</li>
+    <li>Track pending and completed tasks</li>
+    <li>Search assignments and filter by status or priority</li>
+    <li>Monitor overdue assignments and completion progress</li>
+  </ul>
+
+  <button
+    type="button"
+    className="primary-btn"
+    onClick={() =>
+      document.getElementById('dashboard')
+        ?.scrollIntoView({ behavior: 'smooth' })
+    }
+  >
+    Back to Dashboard
+  </button>
+</section>
+
       </main>
     </div>
   );
