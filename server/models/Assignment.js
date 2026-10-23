@@ -3,6 +3,12 @@ const mongoose = require('mongoose');
 
 const assignmentSchema = new mongoose.Schema(
   {
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Student',
+      index: true,
+      default: undefined,
+    },
     title: {
       type: String,
       required: [true, 'Assignment title is required'],

@@ -12,6 +12,8 @@ CourseMate is a full-stack web application that helps students organize, manage,
 - View dashboard statistics.
 - Store assignment data persistently in MongoDB.
 - Validate assignment data through the backend API.
+- Student sign up and sign in with securely hashed passwords.
+- Keep each student's assignments private to their account.
 
 ## Tech Stack
 
@@ -60,13 +62,13 @@ cd server
 npm install
 ```
 
-Create a `.env` file inside the `server` directory and configure your MongoDB connection:
+Copy `server/.env.example` to `server/.env`. Set your MongoDB connection and replace `AUTH_SECRET` with a private random value. You can generate one with:
 
-```env
-MONGODB_URI=mongodb://127.0.0.1:27017/coursemate
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 ```
 
-Use your own connection URI if your MongoDB setup is different.
+Keep the generated secret private and do not commit `server/.env`. Use your own MongoDB connection URI if your setup is different.
 
 Start the backend:
 
@@ -103,6 +105,9 @@ Base URL: `http://localhost:5000`
 
 | Method | Endpoint | Purpose |
 |---|---|---|
+| POST | `/api/auth/signup` | Create a student account |
+| POST | `/api/auth/login` | Sign in and receive a session token |
+| GET | `/api/auth/me` | Get the signed-in student profile |
 | GET | `/api/assignments` | Retrieve assignments |
 | POST | `/api/assignments` | Create an assignment |
 | PUT | `/api/assignments/:id` | Update an assignment |

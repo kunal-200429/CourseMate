@@ -2,8 +2,10 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const Assignment = require('../models/Assignment');
+const requireStudent = require('../middleware/requireStudent');
 
 const router = express.Router();
+router.use(requireStudent);
 
 const VALID_PRIORITIES = ['Low', 'Medium', 'High'];
 const VALID_STATUSES = ['Pending', 'Completed'];
@@ -82,7 +84,7 @@ function validId(req, res, next) {
 // GET: Fetch all assignments
 router.get('/', async (req, res, next) => {
   try {
-    const assignments = await Assignment.find().sort({ dueDate: 1 });
+    const assignments = await Assignment.find({ ownerId: req.student._id }).sort({ dueDate: 1 });
     return res.status(200).json(assignments);
   } catch (error) {
     return next(error);
@@ -104,6 +106,7 @@ router.post('/', async (req, res, next) => {
 
     const assignment = await Assignment.create({
       title: body.title.trim(),
+      ownerId: req.student._id,
       subject: body.subject.trim(),
       description: (body.description || '').trim(),
       dueDate: new Date(body.dueDate),
@@ -159,8 +162,8 @@ router.put('/:id', validId, async (req, res, next) => {
       updates.dueDate = new Date(updates.dueDate);
     }
 
-    const assignment = await Assignment.findByIdAndUpdate(
-      req.params.id,
+    const assignment = await Assignment.findOneAndUpdate(
+      { _id: req.params.id, ownerId: req.student._id },
       { $set: updates },
       {
         new: true,
@@ -183,7 +186,7 @@ router.put('/:id', validId, async (req, res, next) => {
 // DELETE: Remove an assignment
 router.delete('/:id', validId, async (req, res, next) => {
   try {
-    const assignment = await Assignment.findByIdAndDelete(req.params.id);
+    const assignment = await Assignment.findOneAndDelete({ _id: req.params.id, ownerId: req.student._id });
 
     if (!assignment) {
       return res.status(404).json({

@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const assignmentRoutes = require('./routes/assignments');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api/assignments', assignmentRoutes);
+app.use('/api/auth', authRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
